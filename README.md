@@ -1,6 +1,7 @@
 # KhoaLuanTotNghiep_HPDCache
 
 ## Project Note / Ghi chú dự án
+HELLO
 
 This thesis project is based on the open-source CV-HPDCache project.
 
