@@ -2,7 +2,6 @@
 
 ## Project Note / Ghi chú dự án
 
-
 This thesis project is based on the open-source CV-HPDCache project.
 
 The original source code belongs to the OpenHW Group / CV-HPDCache contributors.
@@ -17,6 +16,13 @@ Mã nguồn gốc thuộc về OpenHW Group và các contributor của dự án 
 
 Repository này được sử dụng cho mục đích chỉnh sửa, tích hợp và phát triển thêm trong khuôn khổ khóa luận tốt nghiệp.
 
+
+
+
+--- 
+---
+---
+---
 # OpenHW Core-V High-Performance L1 Dcache (CV-HPDcache)
 
 ![HPDcache CI](https://github.com/openhwgroup/cv-hpdcache/actions/workflows/test.yml/badge.svg)
