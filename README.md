@@ -1,3 +1,21 @@
+# KhoaLuanTotNghiep_HPDCache
+
+## Project Note / Ghi chú dự án
+
+This thesis project is based on the open-source CV-HPDCache project.
+
+The original source code belongs to the OpenHW Group / CV-HPDCache contributors.
+
+This repository is used for thesis modification and integration work, including changes related to L1 Data Cache architecture, write-back policy, PLRU replacement, and additional buffer modules for graduation thesis purposes.
+
+---
+
+Đồ án khóa luận này được phát triển dựa trên mã nguồn mở CV-HPDCache.
+
+Mã nguồn gốc thuộc về OpenHW Group và các contributor của dự án CV-HPDCache.
+
+Repository này được sử dụng cho mục đích chỉnh sửa, tích hợp và phát triển thêm trong khuôn khổ khóa luận tốt nghiệp.
+
 # OpenHW Core-V High-Performance L1 Dcache (CV-HPDcache)
 
 ![HPDcache CI](https://github.com/openhwgroup/cv-hpdcache/actions/workflows/test.yml/badge.svg)
