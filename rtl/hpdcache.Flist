@@ -53,4 +53,5 @@ ${HPDCACHE_DIR}/rtl/src/hpdcache_victim_plru.sv
 ${HPDCACHE_DIR}/rtl/src/hpdcache_victim_random.sv
 ${HPDCACHE_DIR}/rtl/src/hpdcache_victim_sel.sv
 ${HPDCACHE_DIR}/rtl/src/hpdcache_wbuf.sv
+${HPDCACHE_DIR}/rtl/src/hpdcache_vbuf.sv
 ${HPDCACHE_DIR}/rtl/src/hpdcache_flush.sv
