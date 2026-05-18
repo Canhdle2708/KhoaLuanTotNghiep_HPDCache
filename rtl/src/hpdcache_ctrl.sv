@@ -124,6 +124,7 @@ import hpdcache_pkg::*;
     output hpdcache_way_vector_t  flush_alloc_way_o,
     input  logic                  vbuf_replacement_owner_en_i,
     input  logic                  vbuf_alloc_ready_i,
+    input  logic                  vbuf_check_hit_i,
     output logic                  vbuf_alloc_o,
     output hpdcache_nline_t       vbuf_alloc_nline_o,
     output hpdcache_tag_t         vbuf_alloc_tag_o,
@@ -138,6 +139,8 @@ import hpdcache_pkg::*;
     input  logic                  vbuf_safe_to_overwrite_i,
     input  hpdcache_nline_t       vbuf_safe_nline_i,
     input  logic                  vbuf_capture_pending_i,
+    input  logic                  vbuf_writeback_done_i,
+    input  hpdcache_nline_t       vbuf_writeback_done_nline_i,
     input  logic                  flush_data_read_i,
     input  hpdcache_set_t         flush_data_read_set_i,
     input  hpdcache_word_t        flush_data_read_word_i,
@@ -736,6 +739,7 @@ import hpdcache_pkg::*;
         .st1_flush_check_hit_i              (flush_check_hit_i),
         .st1_flush_alloc_ready_i            (flush_alloc_ready_i),
         .vbuf_replacement_owner_en_i        (vbuf_replacement_owner_en_i),
+        .st1_vbuf_check_hit_i               (vbuf_check_hit_i),
         .st1_vbuf_alloc_ready_i             (vbuf_alloc_ready_i),
         .st1_vbuf_victim_ready_i            (st1_vbuf_victim_ready),
         .st1_vbuf_victim_safe_i             (st1_vbuf_victim_safe),
@@ -759,6 +763,7 @@ import hpdcache_pkg::*;
         .st1_rtab_write_miss_o              (st1_rtab_deps.write_miss),
         .st1_rtab_wbuf_hit_o                (st1_rtab_deps.wbuf_hit),
         .st1_rtab_wbuf_not_ready_o          (st1_rtab_deps.wbuf_not_ready),
+        .st1_rtab_vbuf_hit_o                (st1_rtab_deps.vbuf_hit),
         .st1_rtab_dir_unavailable_o         (st1_rtab_deps.dir_unavailable),
         .st1_rtab_dir_fetch_o               (st1_rtab_deps.dir_fetch),
         .st1_rtab_flush_hit_o               (st1_rtab_deps.flush_hit),
@@ -910,6 +915,9 @@ import hpdcache_pkg::*;
         .flush_ack_i                        (flush_ack_i),
         .flush_ack_nline_i                  (flush_ack_nline_i),
         .flush_ready_i                      (flush_alloc_ready_i),
+
+        .vbuf_ack_i                         (vbuf_writeback_done_i),
+        .vbuf_ack_nline_i                   (vbuf_writeback_done_nline_i),
 
         .cfg_single_entry_i                 (cfg_rtab_single_entry_i),
 

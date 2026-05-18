@@ -50,6 +50,8 @@ import hpdcache_pkg::*;
     output logic                  safe_to_overwrite_o,
     output hpdcache_nline_t       safe_nline_o,
     output logic                  capture_pending_o,
+    output logic                  writeback_done_o,
+    output hpdcache_nline_t       writeback_done_nline_o,
     //      }}}
 
     //      CHECK interface
@@ -302,7 +304,12 @@ import hpdcache_pkg::*;
     assign capture_pending_o          = read_enable_i &
                                         valid_q &
                                         (state_q == VBUF_CAPTURE);
-    assign check_hit_o                = check_i & valid_q & (check_nline_i == nline_q);
+    assign writeback_done_o           = wb_done_fire;
+    assign writeback_done_nline_o     = nline_q;
+    assign check_hit_o                = check_i &
+                                        valid_q &
+                                        ~wb_done_fire &
+                                        (check_nline_i == nline_q);
     assign data_read_o                = read_enable_i &
                                         valid_q &
                                         (state_q == VBUF_CAPTURE) &

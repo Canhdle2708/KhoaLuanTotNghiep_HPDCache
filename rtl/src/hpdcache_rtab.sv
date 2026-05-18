@@ -93,6 +93,10 @@ import hpdcache_pkg::*;
     input  hpdcache_nline_t       flush_ack_nline_i,  // Cache-line flush being acknowledged
     input  logic                  flush_ready_i,      // Flush controller is available
 
+    //  Control signals from the Victim Buffer
+    input  logic                  vbuf_ack_i,          // VBUF write-back acknowledged
+    input  hpdcache_nline_t       vbuf_ack_nline_i,    // Cache-line write-back acknowledged
+
     //  Configuration parameters
     input  logic                  cfg_single_entry_i, // Enable only one entry of the table
 
@@ -200,6 +204,7 @@ import hpdcache_pkg::*;
     logic               [N-1:0]  match_refill_set;
     logic               [N-1:0]  match_refill_way;
     logic               [N-1:0]  match_flush_nline;
+    logic               [N-1:0]  match_vbuf_nline;
 
     logic               [N-1:0]  free;
     logic               [N-1:0]  free_alloc;
@@ -292,6 +297,10 @@ import hpdcache_pkg::*;
 
     for (gen_i = 0; gen_i < N; gen_i++) begin : gen_match_flush
         assign match_flush_nline[gen_i] = (flush_ack_nline_i == nline[gen_i]);
+    end
+
+    for (gen_i = 0; gen_i < N; gen_i++) begin : gen_match_vbuf
+        assign match_vbuf_nline[gen_i] = (vbuf_ack_nline_i == nline[gen_i]);
     end
 
     // generate bit vector for waiters on mshr full and dir unavailable
@@ -433,6 +442,11 @@ import hpdcache_pkg::*;
             //  {{{
             deps_rst[i].flush_hit = flush_ack_i & match_flush_nline[i];
             deps_rst[i].flush_not_ready = flush_ready_i;
+            //  }}}
+
+            //  Update victim-buffer dependencies
+            //  {{{
+            deps_rst[i].vbuf_hit = vbuf_ack_i & match_vbuf_nline[i];
             //  }}}
 
             //  Update pending transaction dependency

@@ -152,6 +152,7 @@ import hpdcache_pkg::*;
     output logic                   st1_rtab_write_miss_o,
     output logic                   st1_rtab_wbuf_hit_o,
     output logic                   st1_rtab_wbuf_not_ready_o,
+    output logic                   st1_rtab_vbuf_hit_o,
     output logic                   st1_rtab_dir_unavailable_o,
     output logic                   st1_rtab_dir_fetch_o,
     output logic                   st1_rtab_flush_hit_o,
@@ -185,6 +186,7 @@ import hpdcache_pkg::*;
     input  logic                   st1_flush_check_hit_i,
     input  logic                   st1_flush_alloc_ready_i,
     input  logic                   vbuf_replacement_owner_en_i,
+    input  logic                   st1_vbuf_check_hit_i,
     input  logic                   st1_vbuf_alloc_ready_i,
     input  logic                   st1_vbuf_victim_ready_i,
     input  logic                   st1_vbuf_victim_safe_i,
@@ -364,6 +366,7 @@ import hpdcache_pkg::*;
         st1_rtab_write_miss_o               = 1'b0;
         st1_rtab_wbuf_hit_o                 = 1'b0;
         st1_rtab_wbuf_not_ready_o           = 1'b0;
+        st1_rtab_vbuf_hit_o                 = 1'b0;
         st1_rtab_dir_unavailable_o          = 1'b0;
         st1_rtab_dir_fetch_o                = 1'b0;
         st1_rtab_flush_hit_o                = 1'b0;
@@ -699,6 +702,13 @@ import hpdcache_pkg::*;
                                 st1_rtab_mshr_hit_o = 1'b1;
                             end
 
+                            //  The newest copy is still held by VBUF. Wait until it
+                            //  reaches memory before refilling the line again.
+                            else if (vbuf_replacement_owner_en_i && st1_vbuf_check_hit_i) begin
+                                st1_rtab_alloc = 1'b1;
+                                st1_rtab_vbuf_hit_o = 1'b1;
+                            end
+
                             //  No available slot in the MSHR
                             else if (st1_mshr_full_i) begin
                                 st1_rtab_alloc = 1'b1;
@@ -913,6 +923,15 @@ import hpdcache_pkg::*;
                             //  Put the request in the replay table
                             st1_rtab_alloc = 1'b1;
                             st1_rtab_mshr_hit_o = 1'b1;
+
+                            st1_nop = 1'b1;
+                        end
+
+                        //  The newest copy is still held by VBUF. Wait until it
+                        //  reaches memory before refilling the line again.
+                        else if (vbuf_replacement_owner_en_i && st1_vbuf_check_hit_i) begin
+                            st1_rtab_alloc = 1'b1;
+                            st1_rtab_vbuf_hit_o = 1'b1;
 
                             st1_nop = 1'b1;
                         end

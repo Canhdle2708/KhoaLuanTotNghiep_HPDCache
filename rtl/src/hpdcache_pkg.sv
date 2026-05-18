@@ -355,6 +355,7 @@ package hpdcache_pkg;
         logic write_miss;
         logic wbuf_hit;
         logic wbuf_not_ready;
+        logic vbuf_hit;
         logic dir_unavailable;
         logic dir_fetch;
         logic flush_hit;

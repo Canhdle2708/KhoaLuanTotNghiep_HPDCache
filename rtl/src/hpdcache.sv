@@ -350,9 +350,11 @@ import hpdcache_pkg::*;
     logic                  vbuf_safe_to_overwrite;
     logic                  vbuf_capture_pending;
     logic                  vbuf_check_hit;
+    logic                  vbuf_writeback_done;
     logic                  vbuf_alloc_ready;
     hpdcache_nline_t       vbuf_captured_nline;
     hpdcache_nline_t       vbuf_safe_nline;
+    hpdcache_nline_t       vbuf_writeback_done_nline;
     logic                  vbuf_data_read;
     hpdcache_set_t         vbuf_data_read_set;
     hpdcache_word_t        vbuf_data_read_word;
@@ -588,6 +590,7 @@ import hpdcache_pkg::*;
         .flush_alloc_way_o                  (ctrl_flush_alloc_way),
         .vbuf_replacement_owner_en_i        (VBUF_REPLACEMENT_OWNER_EN),
         .vbuf_alloc_ready_i                 (vbuf_alloc_ready),
+        .vbuf_check_hit_i                   (vbuf_check_hit),
         .vbuf_alloc_o                       (ctrl_vbuf_alloc),
         .vbuf_alloc_nline_o                 (ctrl_vbuf_alloc_nline),
         .vbuf_alloc_tag_o                   (ctrl_vbuf_alloc_tag),
@@ -602,6 +605,8 @@ import hpdcache_pkg::*;
         .vbuf_safe_to_overwrite_i           (vbuf_safe_to_overwrite),
         .vbuf_safe_nline_i                  (vbuf_safe_nline),
         .vbuf_capture_pending_i             (vbuf_capture_pending),
+        .vbuf_writeback_done_i              (vbuf_writeback_done),
+        .vbuf_writeback_done_nline_i        (vbuf_writeback_done_nline),
         .flush_data_read_i                  (flush_data_read),
         .flush_data_read_set_i              (flush_data_read_set),
         .flush_data_read_word_i             (flush_data_read_word),
@@ -1204,9 +1209,11 @@ import hpdcache_pkg::*;
         .safe_to_overwrite_o           (vbuf_safe_to_overwrite),
         .safe_nline_o                  (vbuf_safe_nline),
         .capture_pending_o             (vbuf_capture_pending),
+        .writeback_done_o              (vbuf_writeback_done),
+        .writeback_done_nline_o        (vbuf_writeback_done_nline),
 
-        .check_i                       (1'b0),
-        .check_nline_i                 ('0),
+        .check_i                       (1'b1),
+        .check_nline_i                 (miss_mshr_check_nline),
         .check_hit_o                   (vbuf_check_hit),
 
         .alloc_i                       (ctrl_vbuf_alloc),
