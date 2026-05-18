@@ -42,6 +42,14 @@ import hpdcache_pkg::*;
     output logic                  full_o,
     output logic                  busy_o,
     input  logic                  drain_i,
+    input  logic                  read_enable_i,
+    input  logic                  wb_enable_i,
+    input  logic                  safe_consume_i,
+    output logic                  entry_ready_o,
+    output hpdcache_nline_t       captured_nline_o,
+    output logic                  safe_to_overwrite_o,
+    output hpdcache_nline_t       safe_nline_o,
+    output logic                  capture_pending_o,
     //      }}}
 
     //      CHECK interface
@@ -67,6 +75,8 @@ import hpdcache_pkg::*;
     output hpdcache_set_t         data_read_set_o,
     output hpdcache_word_t        data_read_word_o,
     output hpdcache_way_vector_t  data_read_way_o,
+    input  logic                  data_read_ready_i,
+    input  logic                  data_capture_i,
     input  hpdcache_access_data_t data_read_data_i,
     output logic                  capture_done_o,
     //      }}}
@@ -91,12 +101,18 @@ import hpdcache_pkg::*;
     //  Definition of constants and types
     //  {{{
     localparam int unsigned VbufDepth = VBUF_DEPTH;
+    localparam int unsigned VbufLineBeats = HPDcacheCfg.u.clWords / HPDcacheCfg.u.accessWords;
+    localparam int unsigned VbufBeatCntWidth =
+        (VbufLineBeats > 1) ? $clog2(VbufLineBeats) : 1;
+    localparam hpdcache_uint32 VbufMemReqFlits =
+        HPDcacheCfg.u.memDataWidth < HPDcacheCfg.clWidth ?
+        (HPDcacheCfg.clWidth / HPDcacheCfg.u.memDataWidth) - 1 : 0;
+
+    typedef logic [VbufBeatCntWidth-1:0] vbuf_beat_cnt_t;
 
     typedef enum logic [2:0] {
         VBUF_IDLE,
-        VBUF_ALLOC,
-        VBUF_READ_REQ,
-        VBUF_READ_WAIT,
+        VBUF_CAPTURE,
         VBUF_READY,
         VBUF_MEM_REQ,
         VBUF_MEM_DATA,
@@ -104,12 +120,77 @@ import hpdcache_pkg::*;
     } vbuf_state_e;
 
     vbuf_state_e state_q, state_d;
+
+    logic                                valid_q;
+    logic                                safe_valid_q;
+    hpdcache_nline_t                     nline_q;
+    hpdcache_nline_t                     safe_nline_q;
+    hpdcache_tag_t                       tag_q;
+    hpdcache_set_t                       set_q;
+    hpdcache_way_vector_t                way_q;
+    hpdcache_access_data_t               victim_line_q [VbufLineBeats-1:0];
+    vbuf_beat_cnt_t                      beat_count_q;
+    vbuf_beat_cnt_t                      wb_beat_count_q, wb_beat_count_d;
+    logic                                data_capture_q;
+    logic                                data_read_accept;
+    logic                                data_read_accept_q;
+    logic                                capture_fire;
+    logic                                capture_done_q;
+    logic                                capture_last_beat;
+    logic                                drain_fire;
+    logic                                wb_last_beat;
+    logic                                wb_data_fire;
+    logic                                wb_done_fire;
     //  }}}
 
-    //  FSM placeholder
+    //  Capture and optional write-back FSM
     //  {{{
     always_comb begin
-        state_d = VBUF_IDLE;
+        state_d = state_q;
+
+        unique case (state_q)
+            VBUF_IDLE: begin
+                if (alloc_i) begin
+                    state_d = VBUF_CAPTURE;
+                end
+            end
+
+            VBUF_CAPTURE: begin
+                if (capture_last_beat) begin
+                    state_d = VBUF_READY;
+                end
+            end
+
+            VBUF_READY: begin
+                if (drain_fire) begin
+                    state_d = VBUF_IDLE;
+                end else if (wb_enable_i && valid_q) begin
+                    state_d = VBUF_MEM_REQ;
+                end
+            end
+
+            VBUF_MEM_REQ: begin
+                if (mem_req_write_ready_i) begin
+                    state_d = VBUF_MEM_DATA;
+                end
+            end
+
+            VBUF_MEM_DATA: begin
+                if (wb_data_fire && wb_last_beat) begin
+                    state_d = VBUF_WAIT_RESP;
+                end
+            end
+
+            VBUF_WAIT_RESP: begin
+                if (mem_resp_write_valid_i) begin
+                    state_d = VBUF_IDLE;
+                end
+            end
+
+            default: begin
+                state_d = VBUF_IDLE;
+            end
+        endcase
     end
 
     always_ff @(posedge clk_i or negedge rst_ni) begin : vbuf_state_ff
@@ -119,25 +200,136 @@ import hpdcache_pkg::*;
             state_q <= state_d;
         end
     end
+
+    assign capture_last_beat =
+        (state_q == VBUF_CAPTURE) &
+        capture_fire &
+        (beat_count_q == vbuf_beat_cnt_t'(VbufLineBeats - 1));
+    assign data_read_accept = data_read_o & data_read_ready_i;
+    //  Shadow mode follows the flush stream; owner mode follows only accepted VBUF reads.
+    assign capture_fire = read_enable_i ? data_read_accept_q : data_capture_q;
+    assign drain_fire = drain_i & valid_q & (state_q == VBUF_READY);
+    assign wb_last_beat =
+        (wb_beat_count_q == vbuf_beat_cnt_t'(VbufLineBeats - 1));
+    assign wb_data_fire =
+        (state_q == VBUF_MEM_DATA) & mem_req_write_data_ready_i;
+    assign wb_done_fire =
+        (state_q == VBUF_WAIT_RESP) & mem_resp_write_valid_i;
+
+    always_comb begin : vbuf_wb_beat_count_comb
+        wb_beat_count_d = wb_beat_count_q;
+
+        if ((state_q == VBUF_READY) && wb_enable_i && valid_q) begin
+            wb_beat_count_d = '0;
+        end else if (wb_data_fire) begin
+            if (wb_last_beat) begin
+                wb_beat_count_d = '0;
+            end else begin
+                wb_beat_count_d = wb_beat_count_q + vbuf_beat_cnt_t'(1);
+            end
+        end
+    end
+
+    always_ff @(posedge clk_i or negedge rst_ni) begin : vbuf_capture_ff
+        if (!rst_ni) begin
+            valid_q        <= 1'b0;
+            safe_valid_q   <= 1'b0;
+            beat_count_q   <= '0;
+            wb_beat_count_q <= '0;
+            data_capture_q <= 1'b0;
+            data_read_accept_q <= 1'b0;
+            capture_done_q <= 1'b0;
+        end else begin
+            data_capture_q <= data_capture_i;
+            data_read_accept_q <= data_read_accept;
+            capture_done_q <= 1'b0;
+            wb_beat_count_q <= wb_beat_count_d;
+
+            if (alloc_i && alloc_ready_o) begin
+                valid_q      <= 1'b1;
+                beat_count_q <= '0;
+                nline_q      <= alloc_nline_i;
+                tag_q        <= alloc_tag_i;
+                set_q        <= alloc_set_i;
+                way_q        <= alloc_way_i;
+            end
+
+            if ((state_q == VBUF_CAPTURE) && capture_fire) begin
+                victim_line_q[beat_count_q] <= data_read_data_i;
+                if (capture_last_beat) begin
+                    capture_done_q <= 1'b1;
+                    safe_valid_q   <= 1'b1;
+                    safe_nline_q   <= nline_q;
+                end else begin
+                    beat_count_q <= beat_count_q + vbuf_beat_cnt_t'(1);
+                end
+            end
+
+            if (safe_consume_i) begin
+                safe_valid_q <= 1'b0;
+            end
+
+            if (drain_fire) begin
+                valid_q        <= 1'b0;
+                beat_count_q   <= '0;
+                wb_beat_count_q <= '0;
+                capture_done_q <= 1'b0;
+                data_read_accept_q <= 1'b0;
+            end
+
+            if (wb_done_fire) begin
+                valid_q         <= 1'b0;
+                wb_beat_count_q <= '0;
+                data_read_accept_q <= 1'b0;
+            end
+        end
+    end
     //  }}}
 
-    //  Phase 1 tie-offs
+    //  Shadow capture outputs and optional memory write-back interface
     //  {{{
-    assign empty_o                    = 1'b1;
-    assign full_o                     = 1'b0;
-    assign busy_o                     = 1'b0;
-    assign alloc_ready_o              = 1'b1;
-    assign check_hit_o                = 1'b0;
-    assign data_read_o                = 1'b0;
-    assign data_read_set_o            = '0;
-    assign data_read_word_o           = '0;
-    assign data_read_way_o            = '0;
-    assign capture_done_o             = 1'b0;
-    assign mem_req_write_valid_o      = 1'b0;
-    assign mem_req_write_o            = '0;
-    assign mem_req_write_data_valid_o = 1'b0;
-    assign mem_req_write_data_o       = '0;
-    assign mem_resp_write_ready_o     = 1'b0;
+    assign empty_o                    = ~valid_q;
+    assign full_o                     = valid_q;
+    assign busy_o                     = (state_q == VBUF_CAPTURE) |
+                                        (state_q == VBUF_MEM_REQ) |
+                                        (state_q == VBUF_MEM_DATA) |
+                                        (state_q == VBUF_WAIT_RESP);
+    assign entry_ready_o              = valid_q & (state_q == VBUF_READY);
+    assign alloc_ready_o              = (state_q == VBUF_IDLE);
+    assign captured_nline_o           = nline_q;
+    assign safe_to_overwrite_o        = safe_valid_q;
+    assign safe_nline_o               = safe_nline_q;
+    assign capture_pending_o          = read_enable_i &
+                                        valid_q &
+                                        (state_q == VBUF_CAPTURE);
+    assign check_hit_o                = check_i & valid_q & (check_nline_i == nline_q);
+    assign data_read_o                = read_enable_i &
+                                        valid_q &
+                                        (state_q == VBUF_CAPTURE) &
+                                        ~data_read_accept_q;
+    assign data_read_set_o            = read_enable_i ? set_q : '0;
+    assign data_read_word_o           = read_enable_i ?
+                                        hpdcache_word_t'(beat_count_q * HPDcacheCfg.u.accessWords) :
+                                        '0;
+    assign data_read_way_o            = read_enable_i ? way_q : '0;
+    assign capture_done_o             = capture_done_q;
+    assign mem_req_write_valid_o      = (state_q == VBUF_MEM_REQ);
+    assign mem_req_write_o            = '{
+        mem_req_addr: {nline_q, {HPDcacheCfg.clOffsetWidth{1'b0}}},
+        mem_req_len: hpdcache_mem_len_t'(VbufMemReqFlits),
+        mem_req_size: get_hpdcache_mem_size(HPDcacheCfg.u.memDataWidth/8),
+        mem_req_id: '0,
+        mem_req_command: HPDCACHE_MEM_WRITE,
+        mem_req_atomic: HPDCACHE_MEM_ATOMIC_ADD,
+        mem_req_cacheable: 1'b1
+    };
+    assign mem_req_write_data_valid_o = (state_q == VBUF_MEM_DATA);
+    assign mem_req_write_data_o       = '{
+        mem_req_w_data: victim_line_q[wb_beat_count_q],
+        mem_req_w_be: '1,
+        mem_req_w_last: wb_last_beat
+    };
+    assign mem_resp_write_ready_o     = (state_q == VBUF_WAIT_RESP);
     //  }}}
 
 endmodule

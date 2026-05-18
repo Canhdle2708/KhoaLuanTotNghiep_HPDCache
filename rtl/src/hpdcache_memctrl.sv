@@ -166,6 +166,13 @@ import hpdcache_pkg::*;
     input  hpdcache_way_vector_t                data_flush_read_way_i,
     output hpdcache_access_data_t               data_flush_read_data_o,
 
+    input  logic                                data_vbuf_read_i,
+    input  hpdcache_set_t                       data_vbuf_read_set_i,
+    input  hpdcache_word_t                      data_vbuf_read_word_i,
+    input  hpdcache_way_vector_t                data_vbuf_read_way_i,
+    output logic                                data_vbuf_read_ready_o,
+    output hpdcache_access_data_t               data_vbuf_read_data_o,
+
     input  logic                                data_refill_i,
     input  hpdcache_set_t                       data_refill_set_i,
     input  hpdcache_way_vector_t                data_refill_way_i,
@@ -333,6 +340,7 @@ import hpdcache_pkg::*;
     hpdcache_req_be_t                          data_req_write_be_merged;
 
     logic                                      data_read;
+    logic                                      data_vbuf_read_accept;
     hpdcache_set_t                             data_read_set;
     hpdcache_req_size_t                        data_read_size;
     hpdcache_word_t                            data_read_word;
@@ -885,6 +893,13 @@ import hpdcache_pkg::*;
                 data_read_word    = data_flush_read_word_i;
             end
 
+            data_vbuf_read_accept: begin
+                data_read         = 1'b1;
+                data_read_set     = data_vbuf_read_set_i;
+                data_read_size    = hpdcache_req_size_t'($clog2(HPDcacheCfg.accessWidth/8));
+                data_read_word    = data_vbuf_read_word_i;
+            end
+
             data_err_read_i: begin
                 data_read         = 1'b1;
                 data_read_set     = data_err_set_i;
@@ -904,10 +919,22 @@ import hpdcache_pkg::*;
     //  Multiplex between read and write access on the data RAM
     assign data_way = data_refill_i     ? data_refill_way_i :
                       data_flush_read_i ? data_flush_read_way_i :
+                      data_vbuf_read_accept ? data_vbuf_read_way_i :
                       data_amo_write_i  ? data_amo_write_way_i :
                       data_req_write_i  ? data_req_write_way_i :
                       data_err_read_i   ? data_err_way_i :
                       data_err_write_i  ? data_err_way_i : '0;
+
+    //  VBUF is the lowest-priority Data RAM reader in owner mode.
+    assign data_vbuf_read_ready_o =
+        ~data_req_read_i  &
+        ~data_req_write_i &
+        ~data_amo_write_i &
+        ~data_refill_i    &
+        ~data_flush_read_i &
+        ~data_err_read_i  &
+        ~data_err_write_i;
+    assign data_vbuf_read_accept = data_vbuf_read_i & data_vbuf_read_ready_o;
 
     //  Decode way index
     assign data_ram_word = hpdcache_way_to_data_ram_word(data_way);
@@ -1106,6 +1133,66 @@ import hpdcache_pkg::*;
         .data_o      (data_flush_read_data_o)
     );
 
+    //  Select VBUF data
+    //  {{{
+    hpdcache_data_ram_data_t
+        [HPDcacheCfg.u.accessWords-1:0]
+        data_vbuf_row_data;
+
+    hpdcache_data_word_t
+        [HPDcacheCfg.u.dataWaysPerRamWord-1:0]
+        [HPDcacheCfg.u.accessWords-1:0]
+        data_vbuf_ways_data;
+
+    hpdcache_data_ram_row_idx_t                  data_vbuf_row_index_q;
+    logic [HPDcacheCfg.u.dataWaysPerRamWord-1:0] data_vbuf_read_way;
+
+    always_ff @(posedge clk_i)
+    begin : data_vbuf_row_index_ff
+        if (data_vbuf_read_accept) begin
+            data_vbuf_row_index_q <= data_ram_row;
+        end
+    end
+
+    hpdcache_mux #(
+        .NINPUT      (HPDcacheCfg.u.ways/HPDcacheCfg.u.dataWaysPerRamWord),
+        .DATA_WIDTH  (HPDcacheCfg.accessWidth*HPDcacheCfg.u.dataWaysPerRamWord),
+        .ONE_HOT_SEL (1'b1)
+    ) data_read_vbuf_mux_row_i(
+        .data_i      (data_rentry),
+        .sel_i       (data_vbuf_row_index_q),
+        .data_o      (data_vbuf_row_data)
+    );
+
+    for (gen_i = 0; gen_i < HPDcacheCfg.u.dataWaysPerRamWord; gen_i++)
+    begin : gen_data_vbuf_way_i
+        for (gen_j = 0; gen_j < HPDcacheCfg.u.accessWords; gen_j++)
+        begin : gen_data_vbuf_way_j
+            assign data_vbuf_ways_data[gen_i][gen_j] = data_vbuf_row_data[gen_j][gen_i];
+        end
+    end
+
+    always_comb
+    begin : decode_vbuf_read_way_comb
+        data_vbuf_read_way = '0;
+        for (int i = 0; i < HPDcacheCfg.u.dataWaysPerRamWord; i++) begin
+            for (int j = 0; j < HPDcacheCfg.u.ways; j += HPDcacheCfg.u.dataWaysPerRamWord) begin
+                data_vbuf_read_way[i] |= data_vbuf_read_way_i[i + j];
+            end
+        end
+    end
+
+    hpdcache_mux #(
+        .NINPUT      (HPDcacheCfg.u.dataWaysPerRamWord),
+        .DATA_WIDTH  (HPDcacheCfg.accessWidth),
+        .ONE_HOT_SEL (1'b1)
+    ) data_read_vbuf_mux_way_i(
+        .data_i      (data_vbuf_ways_data),
+        .sel_i       (data_vbuf_read_way),
+        .data_o      (data_vbuf_read_data_o)
+    );
+    //  }}}
+
     if (HPDcacheCfg.u.eccEn) begin : gen_err_rdata_ecc
         assign data_err_rdata_o = data_flush_read_data_o;
     end else begin : gen_err_rdata_noecc
@@ -1141,6 +1228,7 @@ import hpdcache_pkg::*;
                       data_amo_write_i,
                       data_refill_i,
                       data_flush_read_i,
+                      data_vbuf_read_accept,
                       data_err_read_i,
                       data_err_write_i})) else
             $error("hpdcache_memctrl: more than one process is accessing the cache data");

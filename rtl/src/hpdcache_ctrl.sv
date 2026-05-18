@@ -122,11 +122,33 @@ import hpdcache_pkg::*;
     input  logic                  flush_alloc_ready_i,
     output hpdcache_nline_t       flush_alloc_nline_o,
     output hpdcache_way_vector_t  flush_alloc_way_o,
+    input  logic                  vbuf_replacement_owner_en_i,
+    input  logic                  vbuf_alloc_ready_i,
+    output logic                  vbuf_alloc_o,
+    output hpdcache_nline_t       vbuf_alloc_nline_o,
+    output hpdcache_tag_t         vbuf_alloc_tag_o,
+    output hpdcache_set_t         vbuf_alloc_set_o,
+    output hpdcache_way_vector_t  vbuf_alloc_way_o,
+    output logic                  vbuf_safe_consume_o,
+    input  logic                  vbuf_empty_i,
+    input  logic                  vbuf_full_i,
+    input  logic                  vbuf_busy_i,
+    input  logic                  vbuf_entry_ready_i,
+    input  hpdcache_nline_t       vbuf_captured_nline_i,
+    input  logic                  vbuf_safe_to_overwrite_i,
+    input  hpdcache_nline_t       vbuf_safe_nline_i,
+    input  logic                  vbuf_capture_pending_i,
     input  logic                  flush_data_read_i,
     input  hpdcache_set_t         flush_data_read_set_i,
     input  hpdcache_word_t        flush_data_read_word_i,
     input  hpdcache_way_vector_t  flush_data_read_way_i,
     output hpdcache_access_data_t flush_data_read_data_o,
+    input  logic                  data_vbuf_read_i,
+    input  hpdcache_set_t         data_vbuf_read_set_i,
+    input  hpdcache_word_t        data_vbuf_read_word_i,
+    input  hpdcache_way_vector_t  data_vbuf_read_way_i,
+    output logic                  data_vbuf_read_ready_o,
+    output hpdcache_access_data_t data_vbuf_read_data_o,
     input  logic                  flush_ack_i,
     input  hpdcache_nline_t       flush_ack_nline_i,
 
@@ -317,6 +339,15 @@ import hpdcache_pkg::*;
     hpdcache_nline_t         st2_flush_alloc_nline_q;
     hpdcache_way_vector_t    st2_flush_alloc_way_q;
 
+    logic                    st2_vbuf_alloc_q;
+    logic                    st2_vbuf_alloc_d;
+    logic                    st2_vbuf_safe_consume_q;
+    logic                    st2_vbuf_safe_consume_d;
+    hpdcache_nline_t         st2_vbuf_alloc_nline_q;
+    hpdcache_tag_t           st2_vbuf_alloc_tag_q;
+    hpdcache_set_t           st2_vbuf_alloc_set_q;
+    hpdcache_way_vector_t    st2_vbuf_alloc_way_q;
+
     logic                    st2_dir_updt_q, st2_dir_updt_d;
     hpdcache_set_t           st2_dir_updt_set_q;
     hpdcache_way_vector_t    st2_dir_updt_way_q;
@@ -376,6 +407,8 @@ import hpdcache_pkg::*;
     hpdcache_nline_t         st1_req_nline;
     hpdcache_req_addr_t      st1_req_addr;
     logic                    st1_victim_sel;
+    logic                    st1_vbuf_victim_ready;
+    logic                    st1_vbuf_victim_safe;
     logic                    st1_req_updt_sel_victim;
     logic                    st1_req_is_uncacheable;
     logic                    st1_req_is_load;
@@ -397,6 +430,10 @@ import hpdcache_pkg::*;
     logic                    st1_req_is_cmo_fence;
     logic                    st1_req_is_cmo_prefetch;
     logic                    st1_req_is_partial;
+    logic                    st1_req_wr_wt_decoded;
+    logic                    st1_req_wr_wb_decoded;
+    logic                    st1_req_wr_auto_decoded;
+    logic                    force_cacheable_store_wb;
     logic                    st1_req_wr_wt;
     logic                    st1_req_wr_wb;
     logic                    st1_req_wr_auto;
@@ -582,9 +619,20 @@ import hpdcache_pkg::*;
     assign st1_req_is_partial = (hpdcache_uint'(st1_req.req.size) < HPDcacheCfg.wordByteIdxWidth);
 
     //  Decode write-policy hint
-    assign st1_req_wr_wt           = (st1_req.req.pma.wr_policy_hint == HPDCACHE_WR_POLICY_WT);
-    assign st1_req_wr_wb           = (st1_req.req.pma.wr_policy_hint == HPDCACHE_WR_POLICY_WB);
-    assign st1_req_wr_auto         = (st1_req.req.pma.wr_policy_hint == HPDCACHE_WR_POLICY_AUTO);
+    assign st1_req_wr_wt_decoded   = (st1_req.req.pma.wr_policy_hint == HPDCACHE_WR_POLICY_WT);
+    assign st1_req_wr_wb_decoded   = (st1_req.req.pma.wr_policy_hint == HPDCACHE_WR_POLICY_WB);
+    assign st1_req_wr_auto_decoded = (st1_req.req.pma.wr_policy_hint == HPDCACHE_WR_POLICY_AUTO);
+
+    assign force_cacheable_store_wb = st1_req_is_store & ~st1_req_is_uncacheable;
+
+    assign st1_req_wr_wt   = force_cacheable_store_wb ? 1'b0 : st1_req_wr_wt_decoded;
+    assign st1_req_wr_wb   = force_cacheable_store_wb ? 1'b1 : st1_req_wr_wb_decoded;
+    assign st1_req_wr_auto = force_cacheable_store_wb ? 1'b0 : st1_req_wr_auto_decoded;
+
+    assign st1_vbuf_victim_ready =
+        vbuf_entry_ready_i & (vbuf_captured_nline_i == st1_victim_nline);
+    assign st1_vbuf_victim_safe =
+        vbuf_safe_to_overwrite_i & (vbuf_safe_nline_i == st1_victim_nline);
     //  }}}
 
     //  Cache controller protocol engine
@@ -687,8 +735,15 @@ import hpdcache_pkg::*;
         .flush_busy_i,
         .st1_flush_check_hit_i              (flush_check_hit_i),
         .st1_flush_alloc_ready_i            (flush_alloc_ready_i),
+        .vbuf_replacement_owner_en_i        (vbuf_replacement_owner_en_i),
+        .st1_vbuf_alloc_ready_i             (vbuf_alloc_ready_i),
+        .st1_vbuf_victim_ready_i            (st1_vbuf_victim_ready),
+        .st1_vbuf_victim_safe_i             (st1_vbuf_victim_safe),
+        .vbuf_capture_pending_i             (vbuf_capture_pending_i),
         .st2_flush_alloc_i                  (st2_flush_alloc_q),
         .st2_flush_alloc_o                  (st2_flush_alloc_d),
+        .st2_vbuf_alloc_o                   (st2_vbuf_alloc_d),
+        .st2_vbuf_safe_consume_o            (st2_vbuf_safe_consume_d),
 
         .rtab_full_i                        (rtab_full),
         .rtab_fence_i                       (rtab_fence),
@@ -907,6 +962,13 @@ import hpdcache_pkg::*;
             st2_flush_alloc_way_q   <= st1_dir_hit ? st1_dir_hit_way : st1_dir_victim_way;
         end
 
+        if (st2_vbuf_alloc_d) begin
+            st2_vbuf_alloc_nline_q <= st1_victim_nline;
+            st2_vbuf_alloc_tag_q   <= st1_dir_victim_tag;
+            st2_vbuf_alloc_set_q   <= st1_req_set;
+            st2_vbuf_alloc_way_q   <= st1_dir_victim_way;
+        end
+
         if (st2_dir_updt_d) begin
             st2_dir_updt_tag_q   <= st1_dir_hit ? st1_dir_hit_tag : st1_dir_victim_tag;
             st2_dir_updt_set_q   <= st1_req_set;
@@ -923,10 +985,14 @@ import hpdcache_pkg::*;
         if (!rst_ni) begin
             st2_mshr_alloc_q  <= 1'b0;
             st2_flush_alloc_q <= 1'b0;
+            st2_vbuf_alloc_q  <= 1'b0;
+            st2_vbuf_safe_consume_q <= 1'b0;
             st2_dir_updt_q    <= 1'b0;
         end else begin
             st2_mshr_alloc_q  <= st2_mshr_alloc_d;
             st2_flush_alloc_q <= st2_flush_alloc_d;
+            st2_vbuf_alloc_q  <= st2_vbuf_alloc_d;
+            st2_vbuf_safe_consume_q <= st2_vbuf_safe_consume_d;
             st2_dir_updt_q    <= st2_dir_updt_d;
         end
     end
@@ -1092,6 +1158,12 @@ import hpdcache_pkg::*;
         .data_flush_read_way_i         (flush_data_read_way_i),
         .data_flush_read_word_i        (flush_data_read_word_i),
         .data_flush_read_data_o        (flush_data_read_data_o),
+        .data_vbuf_read_i              (data_vbuf_read_i),
+        .data_vbuf_read_set_i          (data_vbuf_read_set_i),
+        .data_vbuf_read_way_i          (data_vbuf_read_way_i),
+        .data_vbuf_read_word_i         (data_vbuf_read_word_i),
+        .data_vbuf_read_ready_o        (data_vbuf_read_ready_o),
+        .data_vbuf_read_data_o         (data_vbuf_read_data_o),
 
         .data_refill_i                 (refill_write_data_i),
         .data_refill_set_i             (refill_set_i),
@@ -1648,6 +1720,12 @@ import hpdcache_pkg::*;
     assign flush_alloc_o       = st2_flush_alloc_q;
     assign flush_alloc_nline_o = st2_flush_alloc_nline_q;
     assign flush_alloc_way_o   = st2_flush_alloc_way_q;
+    assign vbuf_alloc_o        = st2_vbuf_alloc_q;
+    assign vbuf_alloc_nline_o  = st2_vbuf_alloc_nline_q;
+    assign vbuf_alloc_tag_o    = st2_vbuf_alloc_tag_q;
+    assign vbuf_alloc_set_o    = st2_vbuf_alloc_set_q;
+    assign vbuf_alloc_way_o    = st2_vbuf_alloc_way_q;
+    assign vbuf_safe_consume_o = st2_vbuf_safe_consume_q;
     //  }}}
 
     //  Control of the response to the core

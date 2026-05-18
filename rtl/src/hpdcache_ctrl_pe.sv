@@ -184,8 +184,15 @@ import hpdcache_pkg::*;
     input  logic                   flush_busy_i,
     input  logic                   st1_flush_check_hit_i,
     input  logic                   st1_flush_alloc_ready_i,
+    input  logic                   vbuf_replacement_owner_en_i,
+    input  logic                   st1_vbuf_alloc_ready_i,
+    input  logic                   st1_vbuf_victim_ready_i,
+    input  logic                   st1_vbuf_victim_safe_i,
+    input  logic                   vbuf_capture_pending_i,
     input  logic                   st2_flush_alloc_i,
     output logic                   st2_flush_alloc_o,
+    output logic                   st2_vbuf_alloc_o,
+    output logic                   st2_vbuf_safe_consume_o,
 
     //   Uncacheable request handler
     //   {{{
@@ -234,6 +241,7 @@ import hpdcache_pkg::*;
     logic  st1_fence;
     logic  st1_rtab_alloc, st1_rtab_alloc_and_link;
     logic  st0_req_cachedata_read, st1_req_cachedata_read;
+    logic  vbuf_capture_block;
     //  }}}
 
     //  Global control signals
@@ -249,6 +257,7 @@ import hpdcache_pkg::*;
                        st1_req_is_cmo_fence_i   |
                        st1_req_is_cmo_inval_i   |
                        st1_req_is_cmo_flush_i;
+    assign vbuf_capture_block = vbuf_capture_pending_i;
 
     //      When allocating an entry in the RTAB for fence-like operations, make sure that it cannot
     //      be replayed until all pending operations are completed
@@ -332,6 +341,8 @@ import hpdcache_pkg::*;
         st2_mshr_alloc_dirty_o              = st2_mshr_alloc_dirty_i;
 
         st2_flush_alloc_o                   = st2_flush_alloc_i;
+        st2_vbuf_alloc_o                    = 1'b0;
+        st2_vbuf_safe_consume_o             = 1'b0;
 
         st2_dir_updt_o                      = st2_dir_updt_i;
         st2_dir_updt_valid_o                = st2_dir_updt_valid_i;
@@ -730,18 +741,28 @@ import hpdcache_pkg::*;
                                 st1_rtab_flush_hit_o = 1'b1;
                             end
 
-                            //  Flush needed but the controller is not ready
-                            else if (st1_dir_victim_dirty_i && !st1_flush_alloc_ready_i) begin
+                            //  A dirty victim must be captured safely before refill can replace it
+                            else if (st1_dir_victim_dirty_i && !st1_vbuf_victim_safe_i) begin
                                 st1_rtab_alloc = 1'b1;
-                                st1_rtab_flush_not_ready_o = 1'b1;
+
+                                if (!vbuf_replacement_owner_en_i) begin
+                                    if (!st1_flush_alloc_ready_i) begin
+                                        st1_rtab_flush_not_ready_o = 1'b1;
+                                    end else if (st1_vbuf_alloc_ready_i) begin
+                                        st2_flush_alloc_o = 1'b1;
+                                        st2_vbuf_alloc_o  = 1'b1;
+                                    end
+                                end else if (st1_vbuf_alloc_ready_i) begin
+                                    st2_vbuf_alloc_o = 1'b1;
+                                end
                             end
 
                             //  Forward the request to the next stage to allocate the
                             //  entry in the MSHR and send the refill request
                             else begin
-                                //  When the victim cacheline is dirty, flush its data to the
-                                //  memory
-                                st2_flush_alloc_o = st1_dir_victim_dirty_i;
+                                //  Dirty victims reach this point only after VBUF capture is safe.
+                                st2_flush_alloc_o = 1'b0;
+                                st2_vbuf_alloc_o  = 1'b0;
 
                                 //  If the request comes from the replay table, free the
                                 //  corresponding RTAB entry
@@ -749,6 +770,8 @@ import hpdcache_pkg::*;
 
                                 //  Request a MSHR allocation
                                 st2_mshr_alloc_o = 1'b1;
+                                st2_vbuf_safe_consume_o = st1_dir_victim_dirty_i &
+                                                          st1_vbuf_victim_safe_i;
                                 st2_mshr_alloc_need_rsp_o = st1_req_need_rsp_i;
                                 st2_mshr_alloc_wback_o = (st1_req_wr_auto_i & cfg_default_wb_i) |
                                                           st1_req_wr_wb_i;
@@ -950,16 +973,26 @@ import hpdcache_pkg::*;
                                     st1_rtab_dir_unavailable_o = 1'b1;
                                 end
 
-                                //  Flush needed but the controller is not ready
-                                else if (st1_dir_victim_dirty_i && !st1_flush_alloc_ready_i) begin
+                                //  A dirty victim must be captured safely before refill can replace it
+                                else if (st1_dir_victim_dirty_i && !st1_vbuf_victim_safe_i) begin
                                     st1_rtab_alloc = 1'b1;
-                                    st1_rtab_flush_not_ready_o = 1'b1;
+
+                                    if (!vbuf_replacement_owner_en_i) begin
+                                        if (!st1_flush_alloc_ready_i) begin
+                                            st1_rtab_flush_not_ready_o = 1'b1;
+                                        end else if (st1_vbuf_alloc_ready_i) begin
+                                            st2_flush_alloc_o = 1'b1;
+                                            st2_vbuf_alloc_o  = 1'b1;
+                                        end
+                                    end else if (st1_vbuf_alloc_ready_i) begin
+                                        st2_vbuf_alloc_o = 1'b1;
+                                    end
                                 end
 
                                 else begin
-                                    //  When the victim cacheline is dirty, flush its data to the
-                                    //  memory
-                                    st2_flush_alloc_o = st1_dir_victim_dirty_i;
+                                    //  Dirty victims reach this point only after VBUF capture is safe.
+                                    st2_flush_alloc_o = 1'b0;
+                                    st2_vbuf_alloc_o  = 1'b0;
 
                                     //  Update the directory state of the cacheline to FETCHING
                                     st2_dir_updt_o = 1'b1;
@@ -970,6 +1003,8 @@ import hpdcache_pkg::*;
 
                                     //  Send a miss request to the memory (write-allocate)
                                     st2_mshr_alloc_o = 1'b1;
+                                    st2_vbuf_safe_consume_o = st1_dir_victim_dirty_i &
+                                                              st1_vbuf_victim_safe_i;
                                     st2_mshr_alloc_wback_o = 1'b1;
 
                                     //  No available slot in the Coalesce Buffer:
@@ -1196,7 +1231,8 @@ import hpdcache_pkg::*;
                                & ~uc_busy_i
                                & ~err_busy_i
                                & ~rtab_fence_i
-                               & ~nop;
+                               & ~nop
+                               & ~vbuf_capture_block;
 
             scrub_req_ready_o = scrub_req_valid_i
                                & ~rtab_req_valid_i
@@ -1206,13 +1242,15 @@ import hpdcache_pkg::*;
                                & ~uc_busy_i
                                & ~err_busy_i
                                & ~rtab_fence_i
-                               & ~nop;
+                               & ~nop
+                               & ~vbuf_capture_block;
 
             rtab_req_ready_o = rtab_req_valid_i
                                & ~refill_req_valid_i
                                & (~cmo_busy_i | cmo_wait_i)
                                & ~err_busy_i
-                               & ~nop;
+                               & ~nop
+                               & ~vbuf_capture_block;
 
             refill_req_ready_o = refill_req_valid_i
                                  & (~cmo_busy_i | cmo_wait_i)

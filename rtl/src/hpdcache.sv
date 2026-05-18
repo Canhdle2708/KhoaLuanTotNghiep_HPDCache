@@ -335,6 +335,33 @@ import hpdcache_pkg::*;
     logic                  ctrl_flush_alloc;
     hpdcache_nline_t       ctrl_flush_alloc_nline;
     hpdcache_way_vector_t  ctrl_flush_alloc_way;
+    logic                  ctrl_vbuf_alloc;
+    hpdcache_nline_t       ctrl_vbuf_alloc_nline;
+    hpdcache_tag_t         ctrl_vbuf_alloc_tag;
+    hpdcache_set_t         ctrl_vbuf_alloc_set;
+    hpdcache_way_vector_t  ctrl_vbuf_alloc_way;
+    logic                  ctrl_vbuf_safe_consume;
+
+    logic                  vbuf_empty;
+    logic                  vbuf_full;
+    logic                  vbuf_busy;
+    logic                  vbuf_drain;
+    logic                  vbuf_entry_ready;
+    logic                  vbuf_safe_to_overwrite;
+    logic                  vbuf_capture_pending;
+    logic                  vbuf_check_hit;
+    logic                  vbuf_alloc_ready;
+    hpdcache_nline_t       vbuf_captured_nline;
+    hpdcache_nline_t       vbuf_safe_nline;
+    logic                  vbuf_data_read;
+    hpdcache_set_t         vbuf_data_read_set;
+    hpdcache_word_t        vbuf_data_read_word;
+    hpdcache_way_vector_t  vbuf_data_read_way;
+    logic                  vbuf_data_read_ready;
+    hpdcache_access_data_t vbuf_data_read_data;
+    logic                  vbuf_data_capture;
+    hpdcache_access_data_t vbuf_data_capture_data;
+    logic                  vbuf_capture_done;
 
     logic                  rtab_empty;
     logic                  ctrl_empty;
@@ -391,6 +418,18 @@ import hpdcache_pkg::*;
     logic                  mem_resp_write_flush_valid;
     hpdcache_mem_resp_w_t  mem_resp_write_flush;
 
+    logic                  mem_req_write_vbuf_ready;
+    logic                  mem_req_write_vbuf_valid;
+    hpdcache_mem_req_t     mem_req_write_vbuf;
+
+    logic                  mem_req_write_vbuf_data_ready;
+    logic                  mem_req_write_vbuf_data_valid;
+    hpdcache_mem_req_w_t   mem_req_write_vbuf_data;
+
+    logic                  mem_resp_write_vbuf_ready;
+    logic                  mem_resp_write_vbuf_valid;
+    hpdcache_mem_resp_w_t  mem_resp_write_vbuf;
+
     logic                  mem_req_write_uc_ready;
     logic                  mem_req_write_uc_valid;
     hpdcache_mem_req_t     mem_req_write_uc;
@@ -409,6 +448,13 @@ import hpdcache_pkg::*;
         {HPDcacheCfg.u.memIdWidth{1'b1}};
     localparam logic [HPDcacheCfg.u.memIdWidth-1:0] HPDCACHE_UC_WRITE_ID =
         {HPDcacheCfg.u.memIdWidth{1'b1}};
+    localparam logic [HPDcacheCfg.u.memIdWidth-2:0] HPDCACHE_VBUF_WRITE_LOCAL_ID =
+        HPDcacheCfg.u.flushEntries;
+    localparam logic [HPDcacheCfg.u.memIdWidth-1:0] HPDCACHE_VBUF_WRITE_ID =
+        {1'b1, HPDCACHE_VBUF_WRITE_LOCAL_ID};
+    //  0: current shadow mode, flush owns dirty replacement eviction while VBUF observes.
+    //  1: future owner mode, VBUF will own dirty replacement eviction.
+    localparam bit VBUF_REPLACEMENT_OWNER_EN = 1'b1;
     //  }}}
 
     //  Requesters arbiter
@@ -540,11 +586,33 @@ import hpdcache_pkg::*;
         .flush_alloc_ready_i                (flush_alloc_ready),
         .flush_alloc_nline_o                (ctrl_flush_alloc_nline),
         .flush_alloc_way_o                  (ctrl_flush_alloc_way),
+        .vbuf_replacement_owner_en_i        (VBUF_REPLACEMENT_OWNER_EN),
+        .vbuf_alloc_ready_i                 (vbuf_alloc_ready),
+        .vbuf_alloc_o                       (ctrl_vbuf_alloc),
+        .vbuf_alloc_nline_o                 (ctrl_vbuf_alloc_nline),
+        .vbuf_alloc_tag_o                   (ctrl_vbuf_alloc_tag),
+        .vbuf_alloc_set_o                   (ctrl_vbuf_alloc_set),
+        .vbuf_alloc_way_o                   (ctrl_vbuf_alloc_way),
+        .vbuf_safe_consume_o                (ctrl_vbuf_safe_consume),
+        .vbuf_empty_i                       (vbuf_empty),
+        .vbuf_full_i                        (vbuf_full),
+        .vbuf_busy_i                        (vbuf_busy),
+        .vbuf_entry_ready_i                 (vbuf_entry_ready),
+        .vbuf_captured_nline_i              (vbuf_captured_nline),
+        .vbuf_safe_to_overwrite_i           (vbuf_safe_to_overwrite),
+        .vbuf_safe_nline_i                  (vbuf_safe_nline),
+        .vbuf_capture_pending_i             (vbuf_capture_pending),
         .flush_data_read_i                  (flush_data_read),
         .flush_data_read_set_i              (flush_data_read_set),
         .flush_data_read_word_i             (flush_data_read_word),
         .flush_data_read_way_i              (flush_data_read_way),
         .flush_data_read_data_o             (flush_data_read_data),
+        .data_vbuf_read_i                   (vbuf_data_read),
+        .data_vbuf_read_set_i               (vbuf_data_read_set),
+        .data_vbuf_read_word_i              (vbuf_data_read_word),
+        .data_vbuf_read_way_i               (vbuf_data_read_way),
+        .data_vbuf_read_ready_o             (vbuf_data_read_ready),
+        .data_vbuf_read_data_o              (vbuf_data_read_data),
         .flush_ack_i                        (flush_ack),
         .flush_ack_nline_i                  (flush_ack_nline),
 
@@ -1090,6 +1158,87 @@ import hpdcache_pkg::*;
     end
     //  }}}
 
+    //  Victim buffer (shadow capture in Phase 9)
+    //  {{{
+    assign vbuf_drain =
+        ~VBUF_REPLACEMENT_OWNER_EN &
+        flush_ack &
+        ~vbuf_empty &
+        ~vbuf_busy &
+        (flush_ack_nline == vbuf_captured_nline);
+
+    assign vbuf_data_capture =
+        VBUF_REPLACEMENT_OWNER_EN ?
+        (vbuf_data_read & vbuf_data_read_ready) : flush_data_read;
+    assign vbuf_data_capture_data =
+        VBUF_REPLACEMENT_OWNER_EN ? vbuf_data_read_data : flush_data_read_data;
+
+    hpdcache_vbuf #(
+        .HPDcacheCfg                   (HPDcacheCfg),
+
+        .hpdcache_nline_t              (hpdcache_nline_t),
+        .hpdcache_tag_t                (hpdcache_tag_t),
+        .hpdcache_set_t                (hpdcache_set_t),
+        .hpdcache_word_t               (hpdcache_word_t),
+        .hpdcache_way_vector_t         (hpdcache_way_vector_t),
+        .hpdcache_access_data_t        (hpdcache_access_data_t),
+
+        .hpdcache_mem_req_t            (hpdcache_mem_req_t),
+        .hpdcache_mem_req_w_t          (hpdcache_mem_req_w_t),
+        .hpdcache_mem_resp_w_t         (hpdcache_mem_resp_w_t),
+
+        .VBUF_DEPTH                    (1)
+    ) vbuf_i(
+        .clk_i,
+        .rst_ni,
+
+        .empty_o                       (vbuf_empty),
+        .full_o                        (vbuf_full),
+        .busy_o                        (vbuf_busy),
+        .drain_i                       (vbuf_drain),
+        .read_enable_i                 (VBUF_REPLACEMENT_OWNER_EN),
+        .wb_enable_i                   (VBUF_REPLACEMENT_OWNER_EN),
+        .safe_consume_i                (ctrl_vbuf_safe_consume),
+        .entry_ready_o                 (vbuf_entry_ready),
+        .captured_nline_o              (vbuf_captured_nline),
+        .safe_to_overwrite_o           (vbuf_safe_to_overwrite),
+        .safe_nline_o                  (vbuf_safe_nline),
+        .capture_pending_o             (vbuf_capture_pending),
+
+        .check_i                       (1'b0),
+        .check_nline_i                 ('0),
+        .check_hit_o                   (vbuf_check_hit),
+
+        .alloc_i                       (ctrl_vbuf_alloc),
+        .alloc_ready_o                 (vbuf_alloc_ready),
+        .alloc_nline_i                 (ctrl_vbuf_alloc_nline),
+        .alloc_tag_i                   (ctrl_vbuf_alloc_tag),
+        .alloc_set_i                   (ctrl_vbuf_alloc_set),
+        .alloc_way_i                   (ctrl_vbuf_alloc_way),
+
+        .data_read_o                   (vbuf_data_read),
+        .data_read_set_o               (vbuf_data_read_set),
+        .data_read_word_o              (vbuf_data_read_word),
+        .data_read_way_o               (vbuf_data_read_way),
+        .data_read_ready_i             (vbuf_data_read_ready),
+        .data_capture_i                (vbuf_data_capture),
+        .data_read_data_i              (vbuf_data_capture_data),
+        .capture_done_o                (vbuf_capture_done),
+
+        .mem_req_write_ready_i         (mem_req_write_vbuf_ready),
+        .mem_req_write_valid_o         (mem_req_write_vbuf_valid),
+        .mem_req_write_o               (mem_req_write_vbuf),
+
+        .mem_req_write_data_ready_i    (mem_req_write_vbuf_data_ready),
+        .mem_req_write_data_valid_o    (mem_req_write_vbuf_data_valid),
+        .mem_req_write_data_o          (mem_req_write_vbuf_data),
+
+        .mem_resp_write_ready_o        (mem_resp_write_vbuf_ready),
+        .mem_resp_write_valid_i        (mem_resp_write_vbuf_valid),
+        .mem_resp_write_i              (mem_resp_write_vbuf)
+    );
+    //  }}}
+
     //  Read and Write Arbiters for Memory interfaces
     //  {{{
 
@@ -1155,21 +1304,23 @@ import hpdcache_pkg::*;
     //      Write request interface
     //
     //      There is a fixed-priority arbiter between:
-    //      - the flush controller (higher priority)
-    //      - the write buffer
+    //      - the write buffer (higher priority)
+    //      - the flush controller
+    //      - the victim buffer
     //      - the uncacheable request handler (lower priority)
-    logic                [2:0] arb_mem_req_write_ready;
-    logic                [2:0] arb_mem_req_write_valid;
-    hpdcache_mem_req_t   [2:0] arb_mem_req_write;
+    logic                [3:0] arb_mem_req_write_ready;
+    logic                [3:0] arb_mem_req_write_valid;
+    hpdcache_mem_req_t   [3:0] arb_mem_req_write;
 
-    logic                [2:0] arb_mem_req_write_data_valid;
-    logic                [2:0] arb_mem_req_write_data_ready;
-    hpdcache_mem_req_w_t [2:0] arb_mem_req_write_data;
+    logic                [3:0] arb_mem_req_write_data_valid;
+    logic                [3:0] arb_mem_req_write_data_ready;
+    hpdcache_mem_req_w_t [3:0] arb_mem_req_write_data;
 
-    //      Split the ID space into 3 segments:
-    //      1111...1111  -> Uncached writes
-    //      1xxx...xxxx  -> Flush writes (where at least one x is 0)
-    //      0xxx...xxxx  -> Write buffer writes
+    //      Split the ID space into 4 segments:
+    //      1111...1111                         -> Uncached writes
+    //      {1'b1, HPDCACHE_VBUF_WRITE_LOCAL_ID} -> VBUF writes
+    //      1xxx...xxxx (other local IDs)        -> Flush writes
+    //      0xxx...xxxx                         -> Write buffer writes
     function automatic hpdcache_mem_req_t hpdcache_req_write_sel_id(
         hpdcache_mem_req_t req, int kind
     );
@@ -1181,8 +1332,12 @@ import hpdcache_pkg::*;
         else if (kind == 1) begin
             req.mem_req_id = {1'b1, req.mem_req_id[0 +: HPDcacheCfg.u.memIdWidth-1]};
         end
-        //  Request from the uncached controller
+        //  Request from the victim buffer
         else if (kind == 2) begin
+            req.mem_req_id = HPDCACHE_VBUF_WRITE_ID;
+        end
+        //  Request from the uncached controller
+        else if (kind == 3) begin
             req.mem_req_id = '1;
         end
         return req;
@@ -1199,8 +1354,12 @@ import hpdcache_pkg::*;
         else if (kind == 1) begin
             resp.mem_resp_w_id = {1'b0, resp.mem_resp_w_id[0 +: HPDcacheCfg.u.memIdWidth-1]};
         end
-        //  Response to the uncached controller
+        //  Response to the victim buffer
         else if (kind == 2) begin
+            resp.mem_resp_w_id = HPDCACHE_VBUF_WRITE_ID;
+        end
+        //  Response to the uncached controller
+        else if (kind == 3) begin
             resp.mem_resp_w_id = '1;
         end
         return resp;
@@ -1222,16 +1381,24 @@ import hpdcache_pkg::*;
     assign arb_mem_req_write_data_valid[1] = mem_req_write_flush_data_valid;
     assign arb_mem_req_write_data[1]       = mem_req_write_flush_data;
 
-    assign mem_req_write_uc_ready          = arb_mem_req_write_ready[2];
-    assign arb_mem_req_write_valid[2]      = mem_req_write_uc_valid;
-    assign arb_mem_req_write[2]            = hpdcache_req_write_sel_id(mem_req_write_uc, 2);
+    assign mem_req_write_vbuf_ready        = arb_mem_req_write_ready[2];
+    assign arb_mem_req_write_valid[2]      = mem_req_write_vbuf_valid;
+    assign arb_mem_req_write[2]            = hpdcache_req_write_sel_id(mem_req_write_vbuf, 2);
 
-    assign mem_req_write_uc_data_ready     = arb_mem_req_write_data_ready[2];
-    assign arb_mem_req_write_data_valid[2] = mem_req_write_uc_data_valid;
-    assign arb_mem_req_write_data[2]       = mem_req_write_uc_data;
+    assign mem_req_write_vbuf_data_ready   = arb_mem_req_write_data_ready[2];
+    assign arb_mem_req_write_data_valid[2] = mem_req_write_vbuf_data_valid;
+    assign arb_mem_req_write_data[2]       = mem_req_write_vbuf_data;
+
+    assign mem_req_write_uc_ready          = arb_mem_req_write_ready[3];
+    assign arb_mem_req_write_valid[3]      = mem_req_write_uc_valid;
+    assign arb_mem_req_write[3]            = hpdcache_req_write_sel_id(mem_req_write_uc, 3);
+
+    assign mem_req_write_uc_data_ready     = arb_mem_req_write_data_ready[3];
+    assign arb_mem_req_write_data_valid[3] = mem_req_write_uc_data_valid;
+    assign arb_mem_req_write_data[3]       = mem_req_write_uc_data;
 
     hpdcache_mem_req_write_arbiter #(
-        .N                             (3),
+        .N                             (4),
         .hpdcache_mem_req_t            (hpdcache_mem_req_t),
         .hpdcache_mem_req_w_t          (hpdcache_mem_req_w_t)
     ) hpdcache_mem_req_write_arbiter_i (
@@ -1259,6 +1426,7 @@ import hpdcache_pkg::*;
     always_comb
     begin : mem_resp_write_demux_comb
         mem_resp_write_flush_valid = 1'b0;
+        mem_resp_write_vbuf_valid = 1'b0;
         mem_resp_write_wbuf_valid = 1'b0;
         mem_resp_write_uc_valid = 1'b0;
         mem_resp_write_ready_o = 1'b0;
@@ -1266,6 +1434,9 @@ import hpdcache_pkg::*;
             if (mem_resp_write_i.mem_resp_w_id == {HPDcacheCfg.u.memIdWidth{1'b1}}) begin
                 mem_resp_write_uc_valid = 1'b1;
                 mem_resp_write_ready_o = mem_resp_write_uc_ready;
+            end else if (mem_resp_write_i.mem_resp_w_id == HPDCACHE_VBUF_WRITE_ID) begin
+                mem_resp_write_vbuf_valid = 1'b1;
+                mem_resp_write_ready_o = mem_resp_write_vbuf_ready;
             end else if (mem_resp_write_i.mem_resp_w_id[HPDcacheCfg.u.memIdWidth-1]) begin
                 mem_resp_write_flush_valid = 1'b1;
                 mem_resp_write_ready_o = mem_resp_write_flush_ready;
@@ -1278,7 +1449,8 @@ import hpdcache_pkg::*;
 
     assign mem_resp_write_wbuf = hpdcache_resp_write_sel_id(mem_resp_write_i, 0);
     assign mem_resp_write_flush = hpdcache_resp_write_sel_id(mem_resp_write_i, 1);
-    assign mem_resp_write_uc = hpdcache_resp_write_sel_id(mem_resp_write_i, 2);
+    assign mem_resp_write_vbuf = hpdcache_resp_write_sel_id(mem_resp_write_i, 2);
+    assign mem_resp_write_uc = hpdcache_resp_write_sel_id(mem_resp_write_i, 3);
     //  }}}
 
     //  Assertions
@@ -1319,9 +1491,9 @@ import hpdcache_pkg::*;
         $fatal(1, "write buffer data width shall be l.e. to mem interface data width");
     end
     if (HPDcacheCfg.u.wbEn &&
-        (2**(HPDcacheCfg.u.memIdWidth - 1) < (HPDcacheCfg.u.flushEntries + 1)))
+        (2**(HPDcacheCfg.u.memIdWidth - 1) < (HPDcacheCfg.u.flushEntries + 2)))
     begin : gen_mem_id_flush_width_assertion
-        $fatal(1, "insufficient ID bits on the mem interface to transport flushes");
+        $fatal(1, "insufficient ID bits on the mem interface to transport flushes and VBUF writes");
     end
     if (!HPDcacheCfg.u.wtEn && !HPDcacheCfg.u.wbEn) begin : gen_write_policy_assertion
         $fatal(1, "the cache shall be configured to support WT, WB or both");
