@@ -17,7 +17,7 @@ import hpdcache_pkg::*;
     //  {{{
 #(
     localparam hpdcache_user_cfg_t UserCfg = '{
-        nRequesters: (4'b1 << `CONF_HPDCACHE_REQ_SRC_ID_WIDTH),
+        nRequesters: (32'd1 << `CONF_HPDCACHE_REQ_SRC_ID_WIDTH),
         paWidth: `CONF_HPDCACHE_PA_WIDTH,
         wordWidth: `CONF_HPDCACHE_WORD_WIDTH,
         sets: `CONF_HPDCACHE_SETS,

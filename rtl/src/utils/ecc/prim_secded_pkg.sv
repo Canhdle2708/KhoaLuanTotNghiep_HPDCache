@@ -75,8 +75,9 @@ package prim_secded_pkg;
     endcase
   endfunction
 
-  parameter logic [6:0] Secded3629ZeroEcc = 7'h0;
-  parameter logic [35:0] Secded3629ZeroWord = 36'h0;
+  /* verilator lint_off UNUSEDPARAM */
+  localparam logic [6:0] Secded3629ZeroEcc = 7'h0;
+  localparam logic [35:0] Secded3629ZeroWord = 36'h0;
 
   typedef struct packed {
     logic [28:0] data;
@@ -84,8 +85,8 @@ package prim_secded_pkg;
     logic [1:0]  err;
   } secded_36_29_t;
 
-  parameter logic [6:0] Secded3932ZeroEcc = 7'h0;
-  parameter logic [38:0] Secded3932ZeroWord = 39'h0;
+  localparam logic [6:0] Secded3932ZeroEcc = 7'h0;
+  localparam logic [38:0] Secded3932ZeroWord = 39'h0;
 
   typedef struct packed {
     logic [31:0] data;
@@ -93,8 +94,8 @@ package prim_secded_pkg;
     logic [1:0]  err;
   } secded_39_32_t;
 
-  parameter logic [6:0] Secded5548ZeroEcc = 7'h0;
-  parameter logic [54:0] Secded5548ZeroWord = 55'h0;
+  localparam logic [6:0] Secded5548ZeroEcc = 7'h0;
+  localparam logic [54:0] Secded5548ZeroWord = 55'h0;
 
   typedef struct packed {
     logic [47:0] data;
@@ -102,8 +103,9 @@ package prim_secded_pkg;
     logic [1:0]  err;
   } secded_55_48_t;
 
-  parameter logic [7:0] Secded7264ZeroEcc = 8'h0;
-  parameter logic [71:0] Secded7264ZeroWord = 72'h0;
+  localparam logic [7:0] Secded7264ZeroEcc = 8'h0;
+  localparam logic [71:0] Secded7264ZeroWord = 72'h0;
+  /* verilator lint_on UNUSEDPARAM */
 
   typedef struct packed {
     logic [63:0] data;

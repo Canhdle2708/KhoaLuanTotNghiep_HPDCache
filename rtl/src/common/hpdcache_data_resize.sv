@@ -55,6 +55,10 @@ import hpdcache_pkg::*;
 );
 //  }}}
 
+logic _unused_wlast;
+
+assign _unused_wlast = 1'b0 && wlast_i;
+
 //  Upsizer
 //  {{{
 if (WR_WIDTH < RD_WIDTH) begin : gen_upsize

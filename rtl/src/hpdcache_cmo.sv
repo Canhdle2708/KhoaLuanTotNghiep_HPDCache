@@ -65,7 +65,7 @@ import hpdcache_pkg::*;
     output logic                  req_ready_o,
     input  hpdcache_cmoh_op_t     req_op_i,
     input  hpdcache_req_addr_t    req_addr_i,
-    input  hpdcache_req_data_t    req_wdata_i/*unused*/,
+    input  hpdcache_req_data_t    req_wdata_i,
     input  hpdcache_req_sid_t     req_sid_i,
     input  hpdcache_req_tid_t     req_tid_i,
     input  logic                  req_need_rsp_i,
@@ -133,6 +133,10 @@ import hpdcache_pkg::*;
     // }}}
 );
 //  }}}
+
+    logic _unused_req_wdata;
+
+    assign _unused_req_wdata = 1'b0 && (|req_wdata_i);
 
 //  Definition of constants and types
 //  {{{

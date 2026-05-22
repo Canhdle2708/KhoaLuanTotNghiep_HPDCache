@@ -151,6 +151,7 @@ import hpdcache_pkg::*;
                                                 HPDcacheCfg.u.reqWords;
     localparam hpdcache_uint REFILL_LAST_CHUNK_WORD = HPDcacheCfg.u.clWords -
                                                       HPDcacheCfg.u.accessWords;
+    localparam int unsigned MemReqAddrPadWidth = HPDcacheCfg.u.memAddrWidth - HPDcacheCfg.u.paWidth;
 
     typedef enum logic {
         MISS_REQ_IDLE = 1'b0,
@@ -281,7 +282,9 @@ import hpdcache_pkg::*;
     localparam hpdcache_uint REFILL_REQ_SIZE = $clog2(HPDcacheCfg.u.memDataWidth / 8);
     localparam hpdcache_uint REFILL_REQ_LEN = HPDcacheCfg.clWidth / HPDcacheCfg.u.memDataWidth;
 
-    assign mem_req_o.mem_req_addr = {mshr_alloc_nline_q, {HPDcacheCfg.clOffsetWidth{1'b0}} };
+    assign mem_req_o.mem_req_addr = {{MemReqAddrPadWidth{1'b0}},
+                                     mshr_alloc_nline_q,
+                                     {HPDcacheCfg.clOffsetWidth{1'b0}}};
     assign mem_req_o.mem_req_len = hpdcache_mem_len_t'(REFILL_REQ_LEN-1);
     assign mem_req_o.mem_req_size = hpdcache_mem_size_t'(REFILL_REQ_SIZE);
     assign mem_req_o.mem_req_command = HPDCACHE_MEM_READ;
@@ -682,7 +685,8 @@ import hpdcache_pkg::*;
                     v_current_rsp = i / HPDcacheCfg.reqDataBytes;
 
                     dirty_sel = refill_dirty_valid && dirty_be[i] &&
-                                v_current_rsp == refill_core_rsp_word[$clog2(REFILL_REQ_RATIO)-1:0];
+                                v_current_rsp ==
+                                hpdcache_uint'(refill_core_rsp_word[$clog2(REFILL_REQ_RATIO)-1:0]);
                 end
             end else begin : gen_refill_sel_eqsize
                 assign dirty_sel = refill_dirty_valid && dirty_be[i];

@@ -135,6 +135,7 @@ import hpdcache_pkg::*;
 //  {{{
     localparam hpdcache_uint MEM_REQ_RATIO = HPDcacheCfg.u.memDataWidth/HPDcacheCfg.reqDataWidth;
     localparam hpdcache_uint MEM_REQ_WORD_INDEX_WIDTH = $clog2(MEM_REQ_RATIO);
+    localparam int unsigned MemReqAddrPadWidth = HPDcacheCfg.u.memAddrWidth - HPDcacheCfg.u.paWidth;
 
     typedef enum {
         UC_IDLE,
@@ -640,7 +641,7 @@ import hpdcache_pkg::*;
 //  {{{
     always_comb
     begin : mem_req_read_comb
-        mem_req_read_o.mem_req_addr      = req_addr_q;
+        mem_req_read_o.mem_req_addr      = {{MemReqAddrPadWidth{1'b0}}, req_addr_q};
         mem_req_read_o.mem_req_len       = 0;
         mem_req_read_o.mem_req_size      = req_size_q;
         mem_req_read_o.mem_req_id        = mem_read_id_i;
@@ -669,7 +670,7 @@ import hpdcache_pkg::*;
     always_comb
     begin : mem_req_write_comb
         mem_req_write_data                = req_data_q;
-        mem_req_write_o.mem_req_addr      = req_addr_q;
+        mem_req_write_o.mem_req_addr      = {{MemReqAddrPadWidth{1'b0}}, req_addr_q};
         mem_req_write_o.mem_req_len       = 0;
         mem_req_write_o.mem_req_size      = req_size_q;
         mem_req_write_o.mem_req_id        = mem_write_id_i;

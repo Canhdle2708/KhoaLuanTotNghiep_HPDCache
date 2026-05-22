@@ -412,6 +412,7 @@ import hpdcache_pkg::*;
     logic                    st1_victim_sel;
     logic                    st1_vbuf_victim_ready;
     logic                    st1_vbuf_victim_safe;
+    logic                    _unused_vbuf_status;
     logic                    st1_req_updt_sel_victim;
     logic                    st1_req_is_uncacheable;
     logic                    st1_req_is_load;
@@ -636,6 +637,7 @@ import hpdcache_pkg::*;
         vbuf_entry_ready_i & (vbuf_captured_nline_i == st1_victim_nline);
     assign st1_vbuf_victim_safe =
         vbuf_safe_to_overwrite_i & (vbuf_safe_nline_i == st1_victim_nline);
+    assign _unused_vbuf_status = 1'b0 && (vbuf_empty_i | vbuf_full_i | vbuf_busy_i);
     //  }}}
 
     //  Cache controller protocol engine

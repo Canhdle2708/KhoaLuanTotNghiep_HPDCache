@@ -40,6 +40,10 @@ module hpdcache_regbank_wbyteenable_1rw
     output logic [DATA_SIZE-1:0]   rdata
 );
 
+    logic _unused_rst_n;
+
+    assign _unused_rst_n = 1'b0 && rst_n;
+
     /*
      *  Internal memory array declaration
      */

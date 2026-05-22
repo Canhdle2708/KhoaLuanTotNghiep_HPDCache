@@ -41,6 +41,11 @@ module hpdcache_sram_ecc_1rw
     logic [NDATA-1:0][WORD_WIDTH-1:0] wdata_ecc, rdata_ecc;
     logic [NDATA-1:0][SYND_WIDTH-1:0] syndr_ecc;
     logic [NDATA-1:0][1:0] err;
+    logic _unused_err_inj;
+    logic _unused_syndr_ecc;
+
+    assign _unused_err_inj = 1'b0 && (err_inj_i | (|err_inj_msk_i));
+    assign _unused_syndr_ecc = 1'b0 && (|syndr_ecc);
 
     hpdcache_sram_1rw #(
         .ADDR_SIZE (ADDR_SIZE),

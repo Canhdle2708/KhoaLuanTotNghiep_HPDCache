@@ -244,6 +244,8 @@ import hpdcache_pkg::*;
     logic  st1_rtab_alloc, st1_rtab_alloc_and_link;
     logic  st0_req_cachedata_read, st1_req_cachedata_read;
     logic  vbuf_capture_block;
+    logic  _unused_st1_vbuf_victim_ready;
+    logic  _unused_st0_req_inputs;
     //  }}}
 
     //  Global control signals
@@ -260,6 +262,9 @@ import hpdcache_pkg::*;
                        st1_req_is_cmo_inval_i   |
                        st1_req_is_cmo_flush_i;
     assign vbuf_capture_block = vbuf_capture_pending_i;
+    assign _unused_st1_vbuf_victim_ready = 1'b0 && st1_vbuf_victim_ready_i;
+    assign _unused_st0_req_inputs =
+        1'b0 && (st0_req_need_rsp_i | st0_req_is_cmo_fence_i | st0_req_is_cmo_inval_i);
 
     //      When allocating an entry in the RTAB for fence-like operations, make sure that it cannot
     //      be replayed until all pending operations are completed

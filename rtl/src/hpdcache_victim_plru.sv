@@ -66,7 +66,10 @@ import hpdcache_pkg::*;
     logic        unused_available, plru_available, clean_available, dirty_available;
     way_vector_t unused_ways, plru_ways, clean_ways, dirty_ways;
     way_vector_t unused_victim_way, plru_victim_way, clean_victim_way, dirty_victim_way;
+    logic        _unused_sel_inputs;
     //  }}}
+
+    assign _unused_sel_inputs = 1'b0 && (sel_victim_i | (|sel_dir_wback_i));
 
     //  Victim way selection
     //  {{{

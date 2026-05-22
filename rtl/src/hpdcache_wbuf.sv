@@ -110,6 +110,7 @@ import hpdcache_pkg::*;
     localparam int unsigned WBUF_DATA_NWORDS = HPDcacheCfg.u.wbufWords;
     localparam int unsigned WBUF_OFFSET_WIDTH = $clog2((WBUF_WORD_WIDTH/8)*WBUF_DATA_NWORDS);
     localparam int unsigned WBUF_TAG_WIDTH = HPDcacheCfg.u.paWidth - WBUF_OFFSET_WIDTH;
+    localparam int unsigned WBUF_MEM_ADDR_PAD_WIDTH = HPDcacheCfg.u.memAddrWidth - HPDcacheCfg.u.paWidth;
     localparam int unsigned WBUF_WORD_OFFSET = $clog2(WBUF_WORD_WIDTH/8);
     localparam int          WBUF_SEND_FIFO_DEPTH = WBUF_DATA_NENTRIES;
     localparam int unsigned WBUF_READ_MATCH_WIDTH = HPDcacheCfg.nlineWidth;
@@ -224,7 +225,7 @@ import hpdcache_pkg::*;
     wbuf_be_buf_t                               send_be;
 
     wbuf_dir_ptr_t                              ack_id;
-    logic                                       ack_error;
+    logic                                       _unused_ack_error;
 
     wbuf_tag_t                                  write_tag;
     wbuf_data_buf_t                             write_data;
@@ -268,7 +269,8 @@ import hpdcache_pkg::*;
     //  {{{
     assign write_tag = write_addr_i[HPDcacheCfg.u.paWidth-1:WBUF_OFFSET_WIDTH];
     assign ack_id    = mem_resp_write_i.mem_resp_w_id[0 +: HPDcacheCfg.wbufDirPtrWidth];
-    assign ack_error = (mem_resp_write_i.mem_resp_w_error != HPDCACHE_MEM_RESP_OK);
+    assign _unused_ack_error = 1'b0 &&
+        (mem_resp_write_i.mem_resp_w_error != HPDCACHE_MEM_RESP_OK);
 
     always_comb
     begin : wbuf_write_data_comb
@@ -660,7 +662,9 @@ import hpdcache_pkg::*;
 
     //  Memory Address and Data Interface
     //  {{{
-    assign mem_req_write_o.mem_req_addr = { wbuf_meta_send_q.meta_tag, {WBUF_OFFSET_WIDTH{1'b0}} };
+    assign mem_req_write_o.mem_req_addr = {{WBUF_MEM_ADDR_PAD_WIDTH{1'b0}},
+                                           wbuf_meta_send_q.meta_tag,
+                                           {WBUF_OFFSET_WIDTH{1'b0}}};
     assign mem_req_write_o.mem_req_len = 0;
     assign mem_req_write_o.mem_req_size = get_hpdcache_mem_size(HPDcacheCfg.wbufDataWidth/8);
     assign mem_req_write_o.mem_req_id = hpdcache_mem_id_t'(wbuf_meta_send_q.meta_id);

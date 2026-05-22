@@ -102,13 +102,13 @@ import hpdcache_pkg::*;
 
     //  Definition of constants and types
     //  {{{
-    localparam int unsigned VbufDepth = VBUF_DEPTH;
     localparam int unsigned VbufLineBeats = HPDcacheCfg.u.clWords / HPDcacheCfg.u.accessWords;
     localparam int unsigned VbufBeatCntWidth =
         (VbufLineBeats > 1) ? $clog2(VbufLineBeats) : 1;
     localparam hpdcache_uint32 VbufMemReqFlits =
         HPDcacheCfg.u.memDataWidth < HPDcacheCfg.clWidth ?
         (HPDcacheCfg.clWidth / HPDcacheCfg.u.memDataWidth) - 1 : 0;
+    localparam int unsigned VbufMemAddrPadWidth = HPDcacheCfg.u.memAddrWidth - HPDcacheCfg.u.paWidth;
 
     typedef logic [VbufBeatCntWidth-1:0] vbuf_beat_cnt_t;
 
@@ -143,7 +143,15 @@ import hpdcache_pkg::*;
     logic                                wb_last_beat;
     logic                                wb_data_fire;
     logic                                wb_done_fire;
+    logic                                _unused_mem_resp_write;
+    logic                                _unused_tag;
     //  }}}
+
+    if (VBUF_DEPTH != 1) begin : gen_vbuf_depth_check
+        initial begin
+            $error("hpdcache_vbuf currently implements a single-entry VBUF only");
+        end
+    end
 
     //  Capture and optional write-back FSM
     //  {{{
@@ -217,6 +225,8 @@ import hpdcache_pkg::*;
         (state_q == VBUF_MEM_DATA) & mem_req_write_data_ready_i;
     assign wb_done_fire =
         (state_q == VBUF_WAIT_RESP) & mem_resp_write_valid_i;
+    assign _unused_mem_resp_write = 1'b0 && (|mem_resp_write_i);
+    assign _unused_tag = 1'b0 && (|tag_q);
 
     always_comb begin : vbuf_wb_beat_count_comb
         wb_beat_count_d = wb_beat_count_q;
@@ -322,7 +332,9 @@ import hpdcache_pkg::*;
     assign capture_done_o             = capture_done_q;
     assign mem_req_write_valid_o      = (state_q == VBUF_MEM_REQ);
     assign mem_req_write_o            = '{
-        mem_req_addr: {nline_q, {HPDcacheCfg.clOffsetWidth{1'b0}}},
+        mem_req_addr: {{VbufMemAddrPadWidth{1'b0}},
+                       nline_q,
+                       {HPDcacheCfg.clOffsetWidth{1'b0}}},
         mem_req_len: hpdcache_mem_len_t'(VbufMemReqFlits),
         mem_req_size: get_hpdcache_mem_size(HPDcacheCfg.u.memDataWidth/8),
         mem_req_id: '0,

@@ -364,6 +364,7 @@ import hpdcache_pkg::*;
     logic                  vbuf_data_capture;
     hpdcache_access_data_t vbuf_data_capture_data;
     logic                  vbuf_capture_done;
+    logic                  _unused_vbuf_capture_done;
 
     logic                  rtab_empty;
     logic                  ctrl_empty;
@@ -450,8 +451,9 @@ import hpdcache_pkg::*;
         {HPDcacheCfg.u.memIdWidth{1'b1}};
     localparam logic [HPDcacheCfg.u.memIdWidth-1:0] HPDCACHE_UC_WRITE_ID =
         {HPDcacheCfg.u.memIdWidth{1'b1}};
-    localparam logic [HPDcacheCfg.u.memIdWidth-2:0] HPDCACHE_VBUF_WRITE_LOCAL_ID =
-        HPDcacheCfg.u.flushEntries;
+    localparam int unsigned HPDCACHE_VBUF_WRITE_LOCAL_ID_WIDTH = HPDcacheCfg.u.memIdWidth - 1;
+    localparam logic [HPDCACHE_VBUF_WRITE_LOCAL_ID_WIDTH-1:0] HPDCACHE_VBUF_WRITE_LOCAL_ID =
+        HPDCACHE_VBUF_WRITE_LOCAL_ID_WIDTH'(HPDcacheCfg.u.flushEntries);
     localparam logic [HPDcacheCfg.u.memIdWidth-1:0] HPDCACHE_VBUF_WRITE_ID =
         {1'b1, HPDCACHE_VBUF_WRITE_LOCAL_ID};
     //  0: current shadow mode, flush owns dirty replacement eviction while VBUF observes.
@@ -1177,6 +1179,7 @@ import hpdcache_pkg::*;
         (vbuf_data_read & vbuf_data_read_ready) : flush_data_read;
     assign vbuf_data_capture_data =
         VBUF_REPLACEMENT_OWNER_EN ? vbuf_data_read_data : flush_data_read_data;
+    assign _unused_vbuf_capture_done = 1'b0 && vbuf_capture_done;
 
     hpdcache_vbuf #(
         .HPDcacheCfg                   (HPDcacheCfg),

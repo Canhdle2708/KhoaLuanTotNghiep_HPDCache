@@ -109,6 +109,7 @@ import hpdcache_pkg::*;
     //  {{{
     localparam int unsigned FlushEntries = HPDcacheCfg.u.flushEntries;
     localparam int unsigned FlushIndexWidth = (FlushEntries > 1) ? $clog2(FlushEntries) : 1;
+    localparam int unsigned FlushMemAddrPadWidth = HPDcacheCfg.u.memAddrWidth - HPDcacheCfg.u.paWidth;
     // FlushMaxEntries is equal to FlushEntries if it is a power of two
     localparam int unsigned FlushMaxEntries = 2 ** FlushIndexWidth;
 
@@ -310,7 +311,9 @@ import hpdcache_pkg::*;
         (HPDcacheCfg.clWidth / HPDcacheCfg.u.memDataWidth) - 1 : 0;
 
     assign flush_mem_req_wmeta = '{
-        mem_req_addr: {flush_alloc_nline_i, {HPDcacheCfg.clOffsetWidth{1'b0}} },
+        mem_req_addr: {{FlushMemAddrPadWidth{1'b0}},
+                       flush_alloc_nline_i,
+                       {HPDcacheCfg.clOffsetWidth{1'b0}}},
         mem_req_len: hpdcache_mem_len_t'(MemReqFlits),
         mem_req_size: get_hpdcache_mem_size(HPDcacheCfg.u.memDataWidth/8),
         mem_req_id: hpdcache_mem_id_t'(flush_dir_free_ptr),
